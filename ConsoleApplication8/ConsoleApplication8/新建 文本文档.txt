@@ -1,0 +1,1661 @@
+#include <graphics.h>
+#include <conio.h>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <iostream>
+#include <unordered_map>
+#include <iomanip>
+#include <sstream>
+#include <array>
+#include <algorithm>
+#include <queue>
+#include <cmath>
+#include <thread>
+#include <chrono>
+#include <random>
+#include <ctime>
+#include "json.hpp"
+
+using namespace std;
+using json = nlohmann::json;
+
+// 游戏状态枚举
+enum GameState {
+    START_SCREEN,
+    MAZE_SCREEN,
+    END_SCREEN
+};
+
+vector<pair<int, int>> directions = {
+    {-1, 0}, {1, 0}, {0, -1}, {0, 1}
+}; // 上下左右
+
+const int CELL_SIZE = 60;
+const int SLEEP_TIME = 200;
+const int INFO_WIDTH = 400;  // 右侧信息显示区域宽度
+
+struct Position {
+    int x, y;
+    bool operator==(const Position& other) const {
+        return x == other.x && y == other.y;
+    }
+};
+
+vector<vector<char>> maze;
+vector<Position> path;
+Position start_pos, end_pos;
+
+int totalScore = 0;
+int goldCount = 0;
+string lockPassword = "";
+int lockTries = 0;
+bool lockSolved = false;
+
+// BOSS战相关全局变量
+vector<int> B; // BOSS血量数组
+vector<vector<int>> PlayerSkills; // 玩家技能数组
+int bossRounds = 0; // 记录BOSS战回合数
+bool inBossBattle = false; // 标记是否在BOSS战中
+
+GameState currentState = START_SCREEN;
+bool gameRunning = true;
+int screenWidth = 0;
+int screenHeight = 0;
+
+// 粒子系统结构
+struct Particle {
+    float x, y;
+    float vx, vy;
+    int life;
+    COLORREF color;
+    int size;
+};
+
+vector<Particle> particles;
+
+// 添加粒子效果
+void addParticles(int x, int y, int count, COLORREF color, int maxLife = 30, int size = 3) {
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<float> dist(-3.0f, 3.0f);
+    uniform_int_distribution<int> lifeDist(10, maxLife);
+    uniform_int_distribution<int> sizeDist(1, size);
+
+    for (int i = 0; i < count; i++) {
+        particles.push_back({
+            static_cast<float>(x),
+            static_cast<float>(y),
+            dist(gen),
+            dist(gen),
+            lifeDist(gen),
+            color,
+            sizeDist(gen)
+            });
+    }
+}
+
+// 更新粒子系统
+void updateParticles() {
+    for (auto it = particles.begin(); it != particles.end();) {
+        it->x += it->vx;
+        it->y += it->vy;
+        it->life--;
+
+        if (it->life <= 0) {
+            it = particles.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+// 绘制粒子系统
+void drawParticles() {
+    for (const auto& p : particles) {
+        setfillcolor(p.color);
+        // 根据生命周期调整透明度
+        int alpha = min(255, p.life * 8);
+        setfillcolor(RGB(GetRValue(p.color), GetGValue(p.color), GetBValue(p.color)));
+        solidcircle(static_cast<int>(p.x), static_cast<int>(p.y), p.size);
+    }
+}
+
+// SHA-256算法实现
+class SHA256 {
+private:
+    const static uint32_t K[64];
+    std::array<uint32_t, 8> H = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
+
+    inline uint32_t rightRotate(uint32_t value, unsigned int count) {
+        return (value >> count) | (value << (32 - count));
+    }
+
+    void processBlock(const uint8_t* block) {
+        uint32_t W[64];
+        for (int t = 0; t < 16; t++) {
+            W[t] = (block[t * 4] << 24) | (block[t * 4 + 1] << 16) |
+                (block[t * 4 + 2] << 8) | (block[t * 4 + 3]);
+        }
+
+        for (int t = 16; t < 64; t++) {
+            uint32_t s0 = rightRotate(W[t - 15], 7) ^ rightRotate(W[t - 15], 18) ^ (W[t - 15] >> 3);
+            uint32_t s1 = rightRotate(W[t - 2], 17) ^ rightRotate(W[t - 2], 19) ^ (W[t - 2] >> 10);
+            W[t] = W[t - 16] + s0 + W[t - 7] + s1;
+        }
+
+        uint32_t a = H[0];
+        uint32_t b = H[1];
+        uint32_t c = H[2];
+        uint32_t d = H[3];
+        uint32_t e = H[4];
+        uint32_t f = H[5];
+        uint32_t g = H[6];
+        uint32_t h = H[7];
+
+        for (int t = 0; t < 64; t++) {
+            uint32_t S1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);
+            uint32_t ch = (e & f) ^ ((~e) & g);
+            uint32_t temp1 = h + S1 + ch + K[t] + W[t];
+            uint32_t S0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);
+            uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            uint32_t temp2 = S0 + maj;
+
+            h = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+
+        H[0] += a;
+        H[1] += b;
+        H[2] += c;
+        H[3] += d;
+        H[4] += e;
+        H[5] += f;
+        H[6] += g;
+        H[7] += h;
+    }
+
+public:
+    std::vector<uint8_t> compute(const std::vector<uint8_t>& message) {
+        uint64_t originalBitLength = message.size() * 8;
+        uint64_t paddedLength = message.size() + 1 + 8;
+        paddedLength = (paddedLength + 63) & ~63;
+
+        std::vector<uint8_t> paddedMessage(paddedLength, 0);
+        std::copy(message.begin(), message.end(), paddedMessage.begin());
+        paddedMessage[message.size()] = 0x80;
+
+        for (int i = 0; i < 8; i++) {
+            paddedMessage[paddedLength - 8 + i] = (originalBitLength >> ((7 - i) * 8)) & 0xFF;
+        }
+
+        for (size_t i = 0; i < paddedLength; i += 64) {
+            processBlock(&paddedMessage[i]);
+        }
+
+        std::vector<uint8_t> hash(32);
+        for (int i = 0; i < 8; i++) {
+            hash[i * 4] = (H[i] >> 24) & 0xFF;
+            hash[i * 4 + 1] = (H[i] >> 16) & 0xFF;
+            hash[i * 4 + 2] = (H[i] >> 8) & 0xFF;
+            hash[i * 4 + 3] = H[i] & 0xFF;
+        }
+
+        return hash;
+    }
+
+    void reset() {
+        H = {
+            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+        };
+    }
+};
+
+const uint32_t SHA256::K[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+};
+
+class PasswordLock {
+private:
+    std::vector<unsigned char> salt = {
+        0xb2, 0x53, 0x22, 0x65, 0x7d, 0xdf, 0xb0, 0xfe,
+        0x9c, 0xde, 0xde, 0xfe, 0xf3, 0x1d, 0xdc, 0x3e
+    };
+
+    std::string bytesToHex(const std::vector<uint8_t>& bytes) {
+        std::stringstream ss;
+        for (const auto& byte : bytes) {
+            ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+        }
+        return ss.str();
+    }
+
+public:
+    std::string hashPassword(const std::string& password) {
+        std::vector<unsigned char> passwordBytes(password.begin(), password.end());
+        std::vector<unsigned char> combined;
+        combined.insert(combined.end(), salt.begin(), salt.end());
+        combined.insert(combined.end(), passwordBytes.begin(), passwordBytes.end());
+        SHA256 sha256;
+        std::vector<uint8_t> hashBytes = sha256.compute(combined);
+        return bytesToHex(hashBytes);
+    }
+};
+
+// 部分检查：在DFS过程中剪枝
+bool partialCheck(const std::vector<int>& path, const std::vector<std::vector<int>>& clues) {
+    for (const auto& c : clues) {
+        if (c.size() == 2) {
+            if (c[0] == -1 && c[1] == -1) {
+                // 素数且不重复线索：检查已确定位
+                std::vector<int> primes = { 2, 3, 5, 7 };
+                for (int i = 0; i < 3; i++) {
+                    if (path[i] != -1) {
+                        // 检查是否为素数
+                        if (std::find(primes.begin(), primes.end(), path[i]) == primes.end()) {
+                            return false;
+                        }
+                        // 检查已确定位是否重复
+                        for (int j = i + 1; j < 3; j++) {
+                            if (path[j] != -1 && path[i] == path[j]) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+            else if (c[0] >= 1 && c[0] <= 3) {
+                int index = c[0] - 1;
+                if (path[index] != -1) {
+                    if (c[1] == 0) { // 偶数
+                        if (path[index] % 2 != 0) return false;
+                    }
+                    else if (c[1] == 1) { // 奇数
+                        if (path[index] % 2 != 1) return false;
+                    }
+                }
+            }
+        }
+        else if (c.size() == 3) {
+            // 固定位线索：检查已确定位
+            for (int i = 0; i < 3; i++) {
+                if (c[i] != -1 && path[i] != -1) {
+                    if (path[i] != c[i]) return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+// 完整检查：在叶子节点验证所有线索
+bool checkPassword(const std::vector<int>& password, const std::vector<std::vector<int>>& clues) {
+    for (const auto& c : clues) {
+        if (c.size() == 2) {
+            if (c[0] == -1 && c[1] == -1) {
+                // 素数且不重复
+                std::vector<int> primes = { 2, 3, 5, 7 };
+                for (int i = 0; i < 3; i++) {
+                    if (std::find(primes.begin(), primes.end(), password[i]) == primes.end()) {
+                        return false;
+                    }
+                }
+                if (password[0] == password[1] || password[0] == password[2] || password[1] == password[2]) {
+                    return false;
+                }
+            }
+            else if (c[0] >= 1 && c[0] <= 3) {
+                int index = c[0] - 1;
+                if (c[1] == 0) { // 偶数
+                    if (password[index] % 2 != 0) return false;
+                }
+                else if (c[1] == 1) { // 奇数
+                    if (password[index] % 2 != 1) return false;
+                }
+            }
+        }
+        else if (c.size() == 3) {
+            // 固定位线索
+            for (int i = 0; i < 3; i++) {
+                if (c[i] != -1) {
+                    if (password[i] != c[i]) return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+// DFS回溯搜索
+void dfs_password(int depth, std::vector<int>& path, const std::vector<std::vector<int>>& clues,
+    const std::string& L, int& tries, std::string& found_password, int& totalScore) {
+    if (depth == 3) { // 叶子节点
+        tries++;
+        totalScore--; // 每尝试一次扣一个得分
+
+        if (checkPassword(path, clues)) {
+            // 转换为字符串密码
+            std::string pwd_str;
+            for (int digit : path) {
+                pwd_str += ('0' + digit);
+            }
+            // 验证哈希
+            PasswordLock lock;
+            std::string hash = lock.hashPassword(pwd_str);
+            if (hash == L) {
+                found_password = pwd_str;
+            }
+        }
+        return;
+    }
+
+    for (int digit = 0; digit <= 9; digit++) {
+        path[depth] = digit;
+        if (partialCheck(path, clues)) {
+            dfs_password(depth + 1, path, clues, L, tries, found_password, totalScore);
+            if (!found_password.empty()) return; // 找到则终止
+        }
+        path[depth] = -1; // 回溯
+    }
+}
+
+// 判断坐标合法性
+bool isValid(int x, int y) {
+    return x >= 0 && y >= 0 && x < maze.size() && y < maze[0].size();
+}
+
+// 判断是否为通路（空格/BOSS/机关）
+bool isPassable(char c) {
+    return c == ' ' || c == 'L' || c == 'B';
+}
+
+// 在3x3范围内找所有备选点，按优先级分类
+void getVisionOptions(Position cur, vector<vector<bool>>& visited,
+    vector<Position>& golds, vector<Position>& paths, vector<Position>& traps) {
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            int nx = cur.x + dx;
+            int ny = cur.y + dy;
+            if (!isValid(nx, ny) || visited[nx][ny] || maze[nx][ny] == '#') continue;
+
+            // 只将能通过上下左右实际能走到的方向保留
+            bool reachable = false;
+            for (auto dir : directions) {
+                if (cur.x + dir.first == nx && cur.y + dir.second == ny) {
+                    reachable = true;
+                    break;
+                }
+            }
+            if (!reachable) continue;
+
+            char ch = maze[nx][ny];
+            Position next = { nx, ny };
+            if (ch == 'G') golds.push_back(next);
+            else if (isPassable(ch) || ch == 'E') paths.push_back(next);
+            else if (ch == 'T') traps.push_back(next);
+        }
+    }
+}
+
+// 通用兼容字体绘制函数，确保不同电脑都能正确显示字符
+void safeDrawText(int x, int y, char ch) {
+    TCHAR t[2] = { ch, '\0' };
+    settextstyle(20, 0, _T("Arial")); // 使用更通用字体
+    setbkmode(TRANSPARENT);
+    settextcolor(BLACK);
+    outtextxy(x + CELL_SIZE / 3, y + CELL_SIZE / 4, t);
+}
+
+// 绘制信息面板
+void drawInfoPanel() {
+    int startX = maze[0].size() * CELL_SIZE;
+    int width = INFO_WIDTH;
+
+    // 绘制背景
+    setfillcolor(WHITE);
+    bar(startX, 0, startX + width, maze.size() * CELL_SIZE);
+
+    // 绘制边框
+    setlinecolor(BLACK);
+    rectangle(startX, 0, startX + width, maze.size() * CELL_SIZE);
+
+    // 绘制标题
+    settextcolor(BLACK);
+    settextstyle(24, 0, _T("Arial"));
+
+    if (inBossBattle) {
+        outtextxy(startX + 20, 20, _T("BOSS BATTLE"));
+    }
+    else {
+        outtextxy(startX + 20, 20, _T("迷宫信息"));
+    }
+
+    // 绘制金币数量
+    settextstyle(20, 0, _T("Arial"));
+    TCHAR goldText[50];
+    _stprintf_s(goldText, _T("金币数量: %d"), goldCount);
+    outtextxy(startX + 20, 60, goldText);
+
+    // 绘制得分
+    TCHAR scoreText[50];
+    _stprintf_s(scoreText, _T("当前得分: %d"), totalScore);
+    outtextxy(startX + 20, 90, scoreText);
+
+    // 绘制密码锁状态
+    if (!lockPassword.empty()) {
+        settextcolor(GREEN);
+
+        // 将密码字符串转换为整数
+        int passwordInt = 0;
+        try {
+            passwordInt = std::stoi(lockPassword);
+        }
+        catch (...) {
+            passwordInt = 0;
+        }
+
+        TCHAR lockText[100];
+        // 正确显示中文字符
+        _stprintf_s(lockText, _T("密码破解成功: %d"), passwordInt);
+        outtextxy(startX + 20, 130, lockText);
+
+        _stprintf_s(lockText, _T("尝试次数: %d"), lockTries);
+        outtextxy(startX + 20, 160, lockText);
+    }
+    else if (lockSolved) {
+        settextcolor(RED);
+        outtextxy(startX + 20, 130, _T("密码破解失败"));
+    }
+
+    // 显示BOSS战回合数
+    if (bossRounds > 0) {
+        TCHAR bossText[100];
+        _stprintf_s(bossText, _T("BOSS回合数: %d"), bossRounds);
+        outtextxy(startX + 20, 200, bossText);
+    }
+}
+
+// 绘制BOSS图标
+void drawBossIcon(int x, int y, int size) {
+    // 绘制BOSS头部
+    setfillcolor(BLUE);
+    solidcircle(x, y, size / 2);
+
+    // 绘制眼睛
+    setfillcolor(WHITE);
+    solidcircle(x - size / 4, y - size / 6, size / 6);
+    solidcircle(x + size / 4, y - size / 6, size / 6);
+    setfillcolor(BLACK);
+    solidcircle(x - size / 4, y - size / 6, size / 10);
+    solidcircle(x + size / 4, y - size / 6, size / 10);
+
+    // 绘制嘴巴
+    setlinecolor(RED);
+    setlinestyle(PS_SOLID, 2);
+    arc(x, y + size / 6, x - size / 4, y + size / 4, x + size / 4, y + size / 4);
+}
+
+// 绘制机关图标
+void drawLockIcon(int x, int y, int size) {
+    // 绘制锁体
+    setfillcolor(CYAN);
+    solidrectangle(x - size / 2, y - size / 3, x + size / 2, y + size / 3);
+
+    // 绘制锁孔
+    setfillcolor(BLACK);
+    solidcircle(x, y, size / 6);
+
+    // 绘制锁环
+    setlinecolor(YELLOW);
+    setlinestyle(PS_SOLID, 3);
+    arc(x - size / 2, y - size / 2, x - size / 2, y - size / 3, x + size / 2, y - size / 3);
+}
+
+// 可视化迷宫
+void drawMaze(Position cur) {
+    cleardevice();
+
+    // 绘制粒子效果
+    updateParticles();
+    drawParticles();
+
+    for (int i = 0; i < maze.size(); ++i) {
+        for (int j = 0; j < maze[0].size(); ++j) {
+            int x = j * CELL_SIZE;
+            int y = i * CELL_SIZE;
+            char ch = maze[i][j];
+
+            // 背景色
+            if (ch == '#') {
+                setfillcolor(DARKGRAY);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+
+                // 添加纹理效果
+                setlinecolor(LIGHTGRAY);
+                for (int k = 0; k < 4; k++) {
+                    line(x + rand() % CELL_SIZE, y + rand() % CELL_SIZE,
+                        x + rand() % CELL_SIZE, y + rand() % CELL_SIZE);
+                }
+            }
+            else if (ch == 'S') {
+                setfillcolor(GREEN);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+            }
+            else if (ch == 'E') {
+                setfillcolor(RED);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+
+                // 添加终点闪烁效果
+                static int pulse = 0;
+                pulse = (pulse + 1) % 60;
+                int alpha = 128 + 127 * sin(pulse * 0.1);
+                setfillcolor(RGB(255, 0, 0, alpha));
+                solidcircle(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE / 3);
+            }
+            else if (ch == 'G') {
+                setfillcolor(YELLOW);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+
+                // 金币发光效果
+                static int glow = 0;
+                glow = (glow + 1) % 60;
+                int glowSize = CELL_SIZE / 4 + abs(sin(glow * 0.1)) * CELL_SIZE / 8;
+                setfillcolor(RGB(255, 255, 0, 100));
+                solidcircle(x + CELL_SIZE / 2, y + CELL_SIZE / 2, glowSize);
+            }
+            else if (ch == 'T') {
+                setfillcolor(LIGHTRED);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+            }
+            else if (ch == 'B') {
+                setfillcolor(BLUE);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+                drawBossIcon(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE / 2);
+            }
+            else if (ch == 'L') {
+                setfillcolor(CYAN);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+                drawLockIcon(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE / 2);
+
+                // 机关闪烁效果
+                static int lockGlow = 0;
+                lockGlow = (lockGlow + 1) % 60;
+                int lockAlpha = 100 + 155 * abs(sin(lockGlow * 0.1));
+                setfillcolor(RGB(0, 255, 255, lockAlpha));
+                solidcircle(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE / 4);
+            }
+            else {
+                setfillcolor(WHITE);
+                fillrectangle(x, y, x + CELL_SIZE, y + CELL_SIZE);
+            }
+
+            // 绘制字符
+            if (ch == 'G' || ch == 'T') {
+                safeDrawText(x, y, ch);
+            }
+
+            // 当前玩家位置
+            if (i == cur.x && j == cur.y) {
+                // 添加玩家阴影
+                setfillcolor(RGB(0, 0, 0, 100));
+                solidcircle(x + CELL_SIZE / 2 + 5, y + CELL_SIZE / 2 + 5, CELL_SIZE / 4);
+
+                setfillcolor(BLACK);
+                fillcircle(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE / 4);
+
+                // 添加玩家发光效果
+                setfillcolor(RGB(0, 255, 0, 100));
+                solidcircle(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE / 6);
+            }
+        }
+    }
+
+    // 绘制信息面板
+    drawInfoPanel();
+
+    FlushBatchDraw();
+    Sleep(SLEEP_TIME);
+}
+
+// 逐步往回退一步一步移动
+void stepBack(Position from, Position to) {
+    drawMaze(from);
+    Sleep(SLEEP_TIME);
+
+    drawMaze(to);
+    Sleep(SLEEP_TIME);
+}
+
+// 状态信息结构体
+struct StateInfo {
+    int boss_index;          // 当前BOSS索引
+    int current_health;      // 当前BOSS剩余血量
+    vector<int> cooldown;    // 技能冷却时间列表
+    int total_rounds;        // 已用回合数
+    string parent_key;       // 父状态key
+    int action;              // 动作：-1=等待，0~k-1=使用技能
+};
+
+// 生成状态唯一键：将状态编码为字符串作为哈希键
+string generate_key(int boss_index, int health, const vector<int>& cooldown) {
+    stringstream key;// 字符串流
+    key << boss_index << "," << health;// 添加BOSS索引和血量
+    for (int cd : cooldown) {
+        key << "," << cd;// 添加所有技能冷却时间
+    }
+    return key.str();// 返回生成的字符串
+}
+
+// 分支限界法求解BOSS战最优动作序列
+vector<int> solve_boss_fight(const vector<int>& B, const vector<vector<int>>& skills) {
+    int n = B.size(); // BOSS数量
+    int k = skills.size(); // 技能数量
+    if (n == 0) return {}; // 没有BOSS，直接返回空序列
+
+    // 计算BOSS血量后缀和（用于启发式估计）
+    vector<int> suffix(n, 0);
+    suffix[n - 1] = B[n - 1];// 最后一个BOSS的血量
+    for (int i = n - 2; i >= 0; i--) {
+        suffix[i] = B[i] + suffix[i + 1];// 累加后缀和
+    }
+
+    // 计算最大技能伤害
+    int max_damage = 0;
+    for (const auto& skill : skills) {
+        if (skill[0] > max_damage) {
+            max_damage = skill[0];
+        }
+    }
+    if (max_damage == 0) return {}; // 无有效伤害技能
+
+    // 优先队列（最小堆）和状态映射表
+    // 比较函数：按评估函数值f从小到大排序
+    auto cmp = [](const pair<string, int>& a, const pair<string, int>& b) {
+        return a.second > b.second;
+        };
+    priority_queue<pair<string, int>, vector<pair<string, int>>, decltype(cmp)> pq(cmp);
+    unordered_map<string, StateInfo> state_map;// 状态存储
+
+    // 初始状态
+    vector<int> init_cooldown(k, 0);// 初始冷却全为0
+    string init_key = generate_key(0, B[0], init_cooldown);// 生成初始键
+    StateInfo init_state = { 0, B[0], init_cooldown, 0, "", -2 };// 初始状态（-2表示起始）
+    state_map[init_key] = init_state;// 存储初始状态
+    // 计算初始状态的启发式评估值f = 已用回合 + 估计剩余回合
+    int init_f = (suffix[0] + max_damage - 1) / max_damage; // 启发式函数值,向上取整估算
+    pq.push({ init_key, init_f });// 将初始状态加入优先队列
+
+    string final_key = "";// 存储最终状态的键
+    // 开始分支限界搜索
+    while (!pq.empty()) {
+        string key = pq.top().first;// 获取当前最优状态的键
+        pq.pop();// 移除队列
+        StateInfo state = state_map[key];// 获取状态信息
+
+        // 检查状态是否过期（已被更优路径更新）
+        if (state.total_rounds != state_map[key].total_rounds) continue;
+
+        // 终止条件：击败所有BOSS
+        if (state.boss_index >= n) {
+            final_key = key;
+            break;
+        }
+
+        // 扩展状态：等待或使用技能（冷却为0）
+        bool has_skill = false;
+        for (int cd : state.cooldown) {
+            if (cd == 0) {
+                has_skill = true;
+                break;
+            }
+        }
+        // 没有可用技能时只能等待
+        if (!has_skill) {
+            // 等待操作：所有技能冷却减1
+            vector<int> new_cooldown = state.cooldown;
+            for (int j = 0; j < k; j++) {
+                new_cooldown[j] = max(0, new_cooldown[j] - 1);
+            }
+            string new_key = generate_key(state.boss_index, state.current_health, new_cooldown);
+            int new_rounds = state.total_rounds + 1;
+
+            // 更新状态(如果新状态未出现过，或找到更优路径)
+            if (!state_map.count(new_key) || new_rounds < state_map[new_key].total_rounds) {
+                // 计算剩余血量（当前BOSS+后续BOSS）
+                int remaining_health = state.current_health;
+                if (state.boss_index + 1 < n)
+                    remaining_health += suffix[state.boss_index + 1];
+                // 计算新状态的评估函数f = 当前回合 + 预估剩余回合
+                int f_new = new_rounds + (remaining_health + max_damage - 1) / max_damage;
+
+                // 创建新状态
+                StateInfo new_state = {
+                    state.boss_index,
+                    state.current_health,
+                    new_cooldown,
+                    new_rounds,
+                    key, // 父状态键
+                    -1// 等待动作
+                };
+                state_map[new_key] = new_state;// 存储新状态
+                pq.push({ new_key, f_new });// 加入优先队列
+            }
+        }
+        else {
+            // 有可用技能时，尝试每个可用技能
+            for (int i = 0; i < k; i++) {
+                if (state.cooldown[i] != 0) continue;// 跳过冷却中的技能
+
+                int damage = skills[i][0];// 技能伤害
+                int cooldown_time = skills[i][1];// 技能冷却时间
+                int new_health = state.current_health - damage;// 计算新血量
+                int new_boss_index = state.boss_index;// 新BOSS索引
+                vector<int> new_cooldown = state.cooldown;// 新冷却状态
+
+                // 更新技能冷却 - 修改冷却时间计算逻辑
+                for (int j = 0; j < k; j++) {
+                    if (j == i) {
+                        // 使用技能后，设置冷却时间为完整冷却时间
+                        // 冷却时间从下一回合开始计算
+                        new_cooldown[j] = cooldown_time;
+                    }
+                    else {
+                        // 其他技能冷却时间减少1
+                        new_cooldown[j] = max(0, new_cooldown[j] - 1);
+                    }
+                }
+
+                // 检查是否击败当前BOSS
+                if (new_health <= 0) {
+                    new_boss_index++;// 移动到下一个BOSS
+                    if (new_boss_index < n) {
+                        new_health = B[new_boss_index]; // 进入下一个BOSS
+                    }
+                    else {
+                        new_health = 0; // 所有BOSS已击败
+                    }
+                }
+
+                string new_key = generate_key(new_boss_index, new_health, new_cooldown);
+                int new_rounds = state.total_rounds + 1; // 回合数增加
+
+                // 更新状态
+                if (!state_map.count(new_key) || new_rounds < state_map[new_key].total_rounds) {
+                    // 计算剩余血量
+                    int remaining_health = new_health;
+                    if (new_boss_index < n && new_boss_index + 1 < n) {
+                        remaining_health += suffix[new_boss_index + 1];
+                    }
+                    // 计算新评估函数值
+                    int f_new = new_rounds + (remaining_health + max_damage - 1) / max_damage;
+                    // 创建新状态
+                    StateInfo new_state = {
+                        new_boss_index,
+                        new_health,
+                        new_cooldown,
+                        new_rounds,
+                        key,// 父状态键
+                        i // 使用的技能索引
+                    };
+                    state_map[new_key] = new_state;// 存储新状态
+                    pq.push({ new_key, f_new });// 加入优先队列
+                }
+            }
+        }
+    }
+
+    // 回溯构建动作序列
+    vector<int> actions;
+    if (final_key != "") {
+        string cur_key = final_key;
+        // 从最终状态回溯到初始状态
+        while (cur_key != "") {
+            StateInfo& state = state_map[cur_key];
+            if (state.action >= -1) { // 忽略初始状态(-2)
+                actions.push_back(state.action);// 记录动作
+            }
+            cur_key = state.parent_key;// 移动到父状态
+        }
+        reverse(actions.begin(), actions.end());// 反转得到正确顺序
+    }
+    return actions;// 返回动作序列
+}
+
+// 在同一个窗口中显示BOSS战
+void simulate_boss_battle_in_window(const vector<int>& B, const vector<vector<int>>& skills, const vector<int>& sequence) {
+    inBossBattle = true;
+    int n = B.size();
+    int k = skills.size();
+    int current_boss = 0;
+    int current_health = B[0];
+    vector<int> cooldown(k, 0);  // 所有技能初始冷却为0
+    int round = 1;
+    vector<string> log;  // 战斗日志
+    vector<pair<int, int>> damageEffects; // 伤害特效 (位置, 伤害值)
+
+    // 控制变量
+    bool auto_play = true; // 默认自动播放
+    int play_speed = 500; // 毫秒
+    bool paused = false;
+    bool finished = false;
+    bool exit_requested = false;
+
+    // 主循环
+    while (!exit_requested && !finished) {
+        // 处理按键事件
+        if (_kbhit()) {
+            int key = _getch();
+            switch (key) {
+            case ' ': // 空格键切换暂停/继续
+                paused = !paused;
+                break;
+            case 'a': // 'a'键切换自动播放
+                auto_play = !auto_play;
+                break;
+            case '+': // 加快播放速度
+                if (play_speed > 100) play_speed -= 100;
+                break;
+            case '-': // 减慢播放速度
+                play_speed += 100;
+                break;
+            case 'n': // 'n'键下一步
+                if (paused) {
+                    // 手动执行下一步
+                    break;
+                }
+                break;
+            case 27: // ESC键退出
+                exit_requested = true;
+                break;
+            }
+        }
+
+        // 如果处于自动播放模式且未暂停，等待一段时间
+        if (auto_play && !paused) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(play_speed));
+        }
+
+        // 如果处于手动模式且未暂停，等待按键
+        if (!auto_play && !paused) {
+            // 等待用户按键
+            if (!_kbhit()) {
+                continue;
+            }
+            _getch(); // 消耗按键
+        }
+
+        // 如果所有BOSS已被击败或回合结束，标记完成
+        if (current_boss >= n || round > sequence.size()) {
+            finished = true;
+            continue;
+        }
+
+        // 清除屏幕
+        cleardevice();
+
+        // 绘制标题
+        settextcolor(BLACK);
+        settextstyle(36, 0, _T("Arial"));
+        outtextxy((screenWidth - textwidth(_T("史诗级 BOSS 战"))) / 2, 20, _T("史诗级 BOSS 战"));
+
+        // 绘制BOSS信息
+        settextcolor(BLACK);
+        settextstyle(24, 0, _T("Arial"));
+        TCHAR bossInfo[100];
+        _stprintf_s(bossInfo, _T("当前BOSS: %d/%d  血量: %d/%d"),
+            current_boss + 1, n, current_health, B[current_boss]);
+        outtextxy(50, 70, bossInfo);
+
+        // 绘制BOSS血条背景
+        setfillcolor(LIGHTGRAY);
+        fillrectangle(50, 100, 750, 130);
+
+        // 绘制BOSS血条
+        setfillcolor(RED);
+        int healthWidth = static_cast<int>(700.0 * current_health / B[current_boss]);
+        fillrectangle(50, 100, 50 + healthWidth, 130);
+
+        // 绘制血条边框
+        setlinecolor(DARKGRAY);
+        rectangle(50, 100, 750, 130);
+
+        // 绘制BOSS图标
+        drawBossIcon(800, 115, 50);
+
+        // 绘制技能信息
+        settextcolor(BLACK);
+        outtextxy(50, 150, _T("技能列表:"));
+        for (int i = 0; i < k; i++) {
+            // 技能背景
+            setfillcolor(cooldown[i] > 0 ? LIGHTGRAY : LIGHTGREEN);
+            fillrectangle(50, 180 + i * 50, 350, 220 + i * 50);
+
+            // 技能边框
+            setlinecolor(BLACK);
+            rectangle(50, 180 + i * 50, 350, 220 + i * 50);
+
+            TCHAR skillInfo[100];
+            _stprintf_s(skillInfo, _T("技能 %d: 伤害=%d CD=%d/%d"),
+                i, skills[i][0], cooldown[i], skills[i][1]);
+            outtextxy(60, 190 + i * 50, skillInfo);
+        }
+
+        // 绘制回合信息
+        TCHAR roundInfo[50];
+        _stprintf_s(roundInfo, _T("回合: %d"), round);
+        settextstyle(28, 0, _T("Arial"));
+        outtextxy(400, 150, roundInfo);
+
+        // 绘制动作信息
+        int action = sequence[round - 1];
+        TCHAR actionInfo[100];
+        settextstyle(24, 0, _T("Arial"));
+        if (action == -1) {
+            _stprintf_s(actionInfo, _T("动作: 等待"));
+            settextcolor(BLUE);
+        }
+        else {
+            _stprintf_s(actionInfo, _T("动作: 使用技能 %d (伤害=%d)"), action, skills[action][0]);
+            settextcolor(GREEN);
+        }
+        outtextxy(400, 190, actionInfo);
+
+        // 绘制伤害特效
+        for (auto& effect : damageEffects) {
+            settextcolor(RED);
+            settextstyle(36, 0, _T("Arial"));
+            TCHAR damageText[20];
+            _stprintf_s(damageText, _T("-%d"), effect.second);
+            outtextxy(effect.first, 50, damageText);
+        }
+        damageEffects.clear();
+
+        // 绘制日志标题
+        settextcolor(BLACK);
+        settextstyle(24, 0, _T("Arial"));
+        outtextxy(50, 300, _T("战斗日志:"));
+
+        // 绘制最近日志（最多5条）
+        int logStart = max(0, (int)log.size() - 5);
+        for (int i = logStart; i < log.size(); i++) {
+            TCHAR logLine[256];
+            _stprintf_s(logLine, _T("%hs"), log[i].c_str());
+            outtextxy(70, 330 + (i - logStart) * 30, logLine);
+        }
+
+        // 绘制控制面板
+        RECT controlPanel = { 50, 500, screenWidth - 50, 580 };
+        setfillcolor(RGB(200, 200, 255, 180));
+        fillroundrect(controlPanel.left, controlPanel.top, controlPanel.right, controlPanel.bottom, 10, 10);
+        setlinecolor(BLUE);
+        roundrect(controlPanel.left, controlPanel.top, controlPanel.right, controlPanel.bottom, 10, 10);
+
+        // 控制说明
+        TCHAR controls[512];
+        _stprintf_s(controls,
+            _T("控制: [空格] 暂停/继续 | [A] 自动/手动 | [+] 加速 | [-] 减速 | [N] 下一步 | [ESC] 退出"));
+        outtextxy(controlPanel.left + 10, controlPanel.top + 10, controls);
+
+        // 状态信息
+        TCHAR status[256];
+        if (auto_play) {
+            _stprintf_s(status, _T("模式: 自动 | 速度: %d 毫秒/回合 | 状态: %s"),
+                play_speed, paused ? _T("暂停") : _T("进行中"));
+        }
+        else {
+            _stprintf_s(status, _T("模式: 手动 | 状态: %s"),
+                paused ? _T("暂停") : _T("等待输入"));
+        }
+        outtextxy(controlPanel.left + 10, controlPanel.top + 40, status);
+
+        // 更新战斗状态
+        if (action == -1) {
+            // 等待操作
+            log.push_back("回合 " + to_string(round) + ": 等待");
+            for (int i = 0; i < k; i++) {
+                if (cooldown[i] > 0) cooldown[i]--;
+            }
+        }
+        else {
+            // 使用技能
+            int damage = skills[action][0];
+            int cd_time = skills[action][1];
+            log.push_back("回合 " + to_string(round) + ": 使用技能 " + to_string(action) +
+                " (伤害: " + to_string(damage) + ")");
+
+            int prev_health = current_health;
+            current_health -= damage;
+
+            // 添加伤害特效
+            damageEffects.push_back({ 300 + rand() % 200, damage });
+
+            // 添加粒子效果
+            addParticles(400, 100, 30, RED, 40, 5);
+
+            // 更新技能冷却
+            for (int i = 0; i < k; i++) {
+                if (i == action) {
+                    cooldown[i] = cd_time;
+                }
+                else if (cooldown[i] > 0) {
+                    cooldown[i]--;
+                }
+            }
+
+            // 检查BOSS是否被击败
+            if (current_health <= 0) {
+                log.push_back("  BOSS " + to_string(current_boss) + " 被击败!");
+                current_boss++;
+                if (current_boss < n) {
+                    current_health = B[current_boss];
+                    log.push_back("  面对 BOSS " + to_string(current_boss) + " (" + to_string(current_health) + " 血量)");
+
+                    // 添加BOSS切换特效
+                    addParticles(800, 115, 100, BLUE, 60, 8);
+                }
+                else {
+                    log.push_back("  所有BOSS已被击败!");
+                    current_health = 0;
+                }
+            }
+            else {
+                log.push_back("  BOSS " + to_string(current_boss) + " 血量: " +
+                    to_string(prev_health) + " -> " + to_string(current_health));
+            }
+        }
+
+        // 更新粒子
+        updateParticles();
+        drawParticles();
+
+        round++;
+        FlushBatchDraw();
+    }
+
+    // 显示最终结果
+    if (!exit_requested) {
+        cleardevice();
+        settextcolor(BLACK);
+        settextstyle(48, 0, _T("Arial"));
+        outtextxy((screenWidth - textwidth(_T("战斗结束!"))) / 2, 50, _T("战斗结束!"));
+
+        TCHAR result[100];
+        settextstyle(36, 0, _T("Arial"));
+        if (current_boss >= n) {
+            _stprintf_s(result, _T("所有BOSS在 %d 回合内被击败!"), round - 1);
+        }
+        else {
+            _stprintf_s(result, _T("战斗在第 %d 回合停止"), round - 1);
+        }
+        outtextxy((screenWidth - textwidth(result)) / 2, 120, result);
+
+        TCHAR bossInfo[100];
+        _stprintf_s(bossInfo, _T("当前BOSS: %d/%d  血量: %d/%d"),
+            current_boss + 1, n, current_health,
+            (current_boss < n) ? B[current_boss] : 0);
+        outtextxy((screenWidth - textwidth(bossInfo)) / 2, 180, bossInfo);
+
+        // 绘制日志标题
+        settextcolor(BLACK);
+        settextstyle(28, 0, _T("Arial"));
+        outtextxy(50, 230, _T("完整战斗日志:"));
+
+        // 绘制所有日志
+        for (int i = 0; i < log.size(); i++) {
+            TCHAR logLine[256];
+            _stprintf_s(logLine, _T("%hs"), log[i].c_str());
+            outtextxy(70, 270 + i * 30, logLine);
+        }
+
+        // 绘制控制面板
+        RECT controlPanel = { 50, screenHeight - 100, screenWidth - 50, screenHeight - 20 };
+        setfillcolor(RGB(200, 255, 200, 200));
+        fillroundrect(controlPanel.left, controlPanel.top, controlPanel.right, controlPanel.bottom, 10, 10);
+        setlinecolor(GREEN);
+        roundrect(controlPanel.left, controlPanel.top, controlPanel.right, controlPanel.bottom, 10, 10);
+
+        // 退出提示
+        TCHAR exitMsg[100];
+        _stprintf_s(exitMsg, _T("按任意键继续..."));
+        outtextxy((screenWidth - textwidth(exitMsg)) / 2, screenHeight - 70, exitMsg);
+
+        FlushBatchDraw();
+        _getch();
+    }
+
+    inBossBattle = false;
+}
+
+bool dfs(Position cur, vector<vector<bool>>& visited,
+    vector<vector<int>>& clues, string lockHash) {
+    if (!isValid(cur.x, cur.y) || visited[cur.x][cur.y] || maze[cur.x][cur.y] == '#')
+        return false;
+
+    visited[cur.x][cur.y] = true;
+    path.push_back(cur);
+
+    char ch = maze[cur.x][cur.y];
+    if (ch == 'G') {
+        totalScore += 50;
+        goldCount++;
+
+        // 添加金币粒子效果
+        int x = cur.y * CELL_SIZE + CELL_SIZE / 2;
+        int y = cur.x * CELL_SIZE + CELL_SIZE / 2;
+        addParticles(x, y, 30, YELLOW);
+
+        maze[cur.x][cur.y] = ' '; // 捡了金币，变成空地，防止重复加分
+    }
+    else if (ch == 'T') {
+        totalScore -= 30;
+
+        // 添加陷阱粒子效果
+        int x = cur.y * CELL_SIZE + CELL_SIZE / 2;
+        int y = cur.x * CELL_SIZE + CELL_SIZE / 2;
+        addParticles(x, y, 20, RED);
+
+        // 添加震动效果
+        for (int i = 0; i < 3; i++) {
+            drawMaze(cur);
+            Sleep(50);
+        }
+    }
+    else if (ch == 'B') {
+        // 触发BOSS战
+        drawMaze(cur);
+        Sleep(1000);
+
+        // 添加BOSS出现特效
+        int x = cur.y * CELL_SIZE + CELL_SIZE / 2;
+        int y = cur.x * CELL_SIZE + CELL_SIZE / 2;
+        addParticles(x, y, 100, BLUE, 60, 8);
+
+        for (int i = 0; i < 10; i++) {
+            drawMaze(cur);
+            Sleep(50);
+        }
+
+        // 求解最优动作序列
+        vector<int> sequence = solve_boss_fight(B, PlayerSkills);
+        bossRounds = sequence.size(); // 记录回合数
+
+        // 扣除资源值：每个回合扣1分
+        totalScore -= bossRounds;
+
+        // 在同一个窗口中显示BOSS战
+        simulate_boss_battle_in_window(B, PlayerSkills, sequence);
+
+        // BOSS消失
+        maze[cur.x][cur.y] = ' ';
+
+        // 更新显示
+        drawMaze(cur);
+        Sleep(1000);
+    }
+    else if (ch == 'L' && !lockSolved) {
+        // 触发密码锁
+        int tries = 0;
+        string found_password;
+        vector<int> path_vec(3, -1);
+
+        // 在当前位置绘制迷宫
+        drawMaze(cur);
+
+        // 添加机关特效
+        int x = cur.y * CELL_SIZE + CELL_SIZE / 2;
+        int y = cur.x * CELL_SIZE + CELL_SIZE / 2;
+        addParticles(x, y, 50, CYAN);
+
+        // 显示破解界面
+        settextcolor(BLUE);
+        settextstyle(24, 0, _T("Arial"));
+        outtextxy(maze[0].size() * CELL_SIZE + 20, 200, _T("正在破解密码锁..."));
+
+        // 绘制密码锁图标
+        drawLockIcon(maze[0].size() * CELL_SIZE + 200, 300, 80);
+
+        FlushBatchDraw();
+        Sleep(1000);
+
+        // 破解密码
+        dfs_password(0, path_vec, clues, lockHash, tries, found_password, totalScore);
+
+        // 更新破解结果
+        lockTries = tries;
+        if (!found_password.empty()) {
+            lockPassword = found_password;
+            totalScore += 100; // 破解成功奖励
+
+            // 添加成功特效
+            addParticles(x, y, 100, GREEN, 60, 6);
+            settextcolor(GREEN);
+            outtextxy(maze[0].size() * CELL_SIZE + 20, 250, _T("破解成功!"));
+        }
+        else {
+            // 添加失败特效
+            addParticles(x, y, 100, RED, 60, 6);
+            settextcolor(RED);
+            outtextxy(maze[0].size() * CELL_SIZE + 20, 250, _T("破解失败!"));
+        }
+
+        FlushBatchDraw();
+        Sleep(1500);
+        lockSolved = true;
+
+        // 机关消失
+        maze[cur.x][cur.y] = ' ';
+
+        // 更新显示
+        drawMaze(cur);
+        Sleep(1000);
+    }
+
+    drawMaze(cur);
+    if (maze[cur.x][cur.y] == 'E') return true;
+
+    vector<Position> golds, passes, traps;
+    getVisionOptions(cur, visited, golds, passes, traps);
+
+    vector<Position> candidates;
+    candidates.insert(candidates.end(), golds.begin(), golds.end());
+    candidates.insert(candidates.end(), passes.begin(), passes.end());
+    candidates.insert(candidates.end(), traps.begin(), traps.end());
+
+    for (auto next : candidates) {
+        if (dfs(next, visited, clues, lockHash)) return true;
+    }
+
+    // 逐步往回走
+    if (path.size() >= 2) {
+        Position prev = path[path.size() - 2];
+        stepBack(cur, prev);
+    }
+
+    path.pop_back();
+    visited[cur.x][cur.y] = false;
+    return false;
+}
+
+// 绘制按钮
+void drawButton(int x, int y, int width, int height, const TCHAR* text, bool highlighted = false) {
+    // 按钮背景
+    if (highlighted) {
+        setfillcolor(RGB(180, 230, 180));
+    }
+    else {
+        setfillcolor(RGB(150, 200, 150));
+    }
+    fillroundrect(x, y, x + width, y + height, 10, 10);
+
+    // 按钮边框
+    setlinecolor(highlighted ? GREEN : DARKGRAY);
+    setlinestyle(PS_SOLID, 2);
+    roundrect(x, y, x + width, y + height, 10, 10);
+
+    // 按钮文字
+    settextcolor(BLACK);
+    setbkmode(TRANSPARENT);
+    settextstyle(24, 0, _T("Arial"));
+    int textWidth = textwidth(text);
+    int textHeight = textheight(text);
+    outtextxy(x + (width - textWidth) / 2, y + (height - textHeight) / 2, text);
+}
+
+// 检测按钮点击
+bool isButtonClicked(int mouseX, int mouseY, int btnX, int btnY, int btnWidth, int btnHeight) {
+    return (mouseX >= btnX && mouseX <= btnX + btnWidth &&
+        mouseY >= btnY && mouseY <= btnY + btnHeight);
+}
+
+// 显示开始界面
+void showStartScreen() {
+    // 按钮尺寸和位置
+    const int btnWidth = 250;
+    const int btnHeight = 70;
+    const int startBtnX = (screenWidth - btnWidth) / 2;
+    const int startBtnY = screenHeight / 2;
+    const int exitBtnX = startBtnX;
+    const int exitBtnY = startBtnY + btnHeight + 40;
+
+    int highlightedButton = -1; // -1:无, 0:开始, 1:退出
+
+    // 标题动画参数
+    int titleY = 100;
+    int titleOffset = 0;
+    int pulse = 0;
+
+    while (currentState == START_SCREEN) {
+        cleardevice();
+
+        // 绘制背景
+        setfillcolor(RGB(50, 50, 100));
+        bar(0, 0, screenWidth, screenHeight);
+
+        // 绘制星空背景
+        setfillcolor(WHITE);
+        for (int i = 0; i < 100; i++) {
+            int size = 1 + rand() % 2;
+            solidcircle(rand() % screenWidth, rand() % screenHeight, size);
+        }
+
+        // 标题动画
+        pulse = (pulse + 1) % 360;
+        titleOffset = static_cast<int>(10 * sin(pulse * 0.05));
+
+        // 绘制标题
+        settextcolor(RGB(255, 255, 100));
+        settextstyle(72, 0, _T("Arial"));
+        outtextxy((screenWidth - textwidth(_T("迷宫探险"))) / 2, titleY + titleOffset, _T("迷宫探险"));
+
+        // 绘制副标题
+        settextcolor(RGB(200, 255, 200));
+        settextstyle(28, 0, _T("Arial"));
+        outtextxy((screenWidth - textwidth(_T("收集金币 破解密码 击败BOSS"))) / 2,
+            titleY + 100 + titleOffset,
+            _T("收集金币 破解密码 击败BOSS"));
+
+        // 绘制按钮
+        drawButton(startBtnX, startBtnY, btnWidth, btnHeight, _T("开始冒险"), highlightedButton == 0);
+        drawButton(exitBtnX, exitBtnY, btnWidth, btnHeight, _T("退出游戏"), highlightedButton == 1);
+
+        // 添加粒子效果
+        updateParticles();
+        drawParticles();
+
+        FlushBatchDraw();
+
+        // 处理鼠标事件
+        if (MouseHit()) {
+            MOUSEMSG msg = GetMouseMsg();
+            if (msg.uMsg == WM_MOUSEMOVE) {
+                // 高亮按钮
+                if (isButtonClicked(msg.x, msg.y, startBtnX, startBtnY, btnWidth, btnHeight)) {
+                    highlightedButton = 0;
+                }
+                else if (isButtonClicked(msg.x, msg.y, exitBtnX, exitBtnY, btnWidth, btnHeight)) {
+                    highlightedButton = 1;
+                }
+                else {
+                    highlightedButton = -1;
+                }
+            }
+            else if (msg.uMsg == WM_LBUTTONDOWN) {
+                if (isButtonClicked(msg.x, msg.y, startBtnX, startBtnY, btnWidth, btnHeight)) {
+                    // 开始游戏
+                    currentState = MAZE_SCREEN;
+                    return;
+                }
+                else if (isButtonClicked(msg.x, msg.y, exitBtnX, exitBtnY, btnWidth, btnHeight)) {
+                    // 退出游戏
+                    gameRunning = false;
+                    return;
+                }
+            }
+        }
+
+        // 处理键盘事件
+        if (_kbhit()) {
+            int key = _getch();
+            if (key == 27) { // ESC键退出
+                gameRunning = false;
+                return;
+            }
+        }
+
+        // 添加新粒子
+        if (rand() % 10 == 0) {
+            addParticles(rand() % screenWidth, screenHeight, 1,
+                RGB(rand() % 155 + 100, rand() % 155 + 100, rand() % 155 + 100),
+                50, 2);
+        }
+
+        Sleep(50);
+    }
+}
+
+// 显示结束界面
+void showEndScreen() {
+    // 按钮尺寸和位置
+    const int btnWidth = 250;
+    const int btnHeight = 70;
+    const int restartBtnX = (screenWidth - btnWidth * 2 - 40) / 2;
+    const int restartBtnY = screenHeight - 150;
+    const int exitBtnX = restartBtnX + btnWidth + 40;
+    const int exitBtnY = restartBtnY;
+
+    int highlightedButton = -1; // -1:无, 0:重新开始, 1:退出
+
+    // 动画参数
+    int pulse = 0;
+
+    while (currentState == END_SCREEN) {
+        cleardevice();
+
+        // 绘制背景
+        setfillcolor(RGB(100, 50, 50));
+        bar(0, 0, screenWidth, screenHeight);
+
+        // 绘制标题
+        pulse = (pulse + 1) % 360;
+        int pulseSize = static_cast<int>(5 * sin(pulse * 0.05));
+
+        settextcolor(RGB(255, 200, 100));
+        settextstyle(72, 0, _T("Arial"));
+        outtextxy((screenWidth - textwidth(_T("游戏结束"))) / 2, 50 + pulseSize, _T("游戏结束"));
+
+        // 绘制分数信息
+        settextcolor(RGB(255, 255, 200));
+        settextstyle(36, 0, _T("Arial"));
+
+        TCHAR scoreText[100];
+        _stprintf_s(scoreText, _T("最终得分: %d"), totalScore);
+        outtextxy((screenWidth - textwidth(scoreText)) / 2, 180, scoreText);
+
+        TCHAR goldText[100];
+        _stprintf_s(goldText, _T("金币数量: %d"), goldCount);
+        outtextxy((screenWidth - textwidth(goldText)) / 2, 230, goldText);
+
+        if (!lockPassword.empty()) {
+            TCHAR lockText[100];
+            _stprintf_s(lockText, _T("密码破解成功! 密码: %hs"), lockPassword.c_str());
+            outtextxy((screenWidth - textwidth(lockText)) / 2, 280, lockText);
+        }
+
+        if (bossRounds > 0) {
+            TCHAR bossText[100];
+            _stprintf_s(bossText, _T("BOSS战回合数: %d"), bossRounds);
+            outtextxy((screenWidth - textwidth(bossText)) / 2, 330, bossText);
+        }
+
+        // 绘制按钮
+        drawButton(restartBtnX, restartBtnY, btnWidth, btnHeight, _T("再玩一次"), highlightedButton == 0);
+        drawButton(exitBtnX, exitBtnY, btnWidth, btnHeight, _T("退出游戏"), highlightedButton == 1);
+
+        // 添加粒子效果
+        updateParticles();
+        drawParticles();
+
+        FlushBatchDraw();
+
+        // 处理鼠标事件
+        if (MouseHit()) {
+            MOUSEMSG msg = GetMouseMsg();
+            if (msg.uMsg == WM_MOUSEMOVE) {
+                // 高亮按钮
+                if (isButtonClicked(msg.x, msg.y, restartBtnX, restartBtnY, btnWidth, btnHeight)) {
+                    highlightedButton = 0;
+                }
+                else if (isButtonClicked(msg.x, msg.y, exitBtnX, exitBtnY, btnWidth, btnHeight)) {
+                    highlightedButton = 1;
+                }
+                else {
+                    highlightedButton = -1;
+                }
+            }
+            else if (msg.uMsg == WM_LBUTTONDOWN) {
+                if (isButtonClicked(msg.x, msg.y, restartBtnX, restartBtnY, btnWidth, btnHeight)) {
+                    // 重新开始游戏
+                    currentState = START_SCREEN;
+                    return;
+                }
+                else if (isButtonClicked(msg.x, msg.y, exitBtnX, exitBtnY, btnWidth, btnHeight)) {
+                    // 退出游戏
+                    gameRunning = false;
+                    return;
+                }
+            }
+        }
+
+        // 处理键盘事件
+        if (_kbhit()) {
+            int key = _getch();
+            if (key == 27) { // ESC键退出
+                gameRunning = false;
+                return;
+            }
+        }
+
+        // 添加新粒子
+        if (rand() % 10 == 0) {
+            addParticles(rand() % screenWidth, 0, 1,
+                RGB(rand() % 155 + 100, rand() % 100, rand() % 100),
+                50, 2);
+        }
+
+        Sleep(50);
+    }
+}
+
+// 重置游戏状态
+void resetGameState() {
+    totalScore = 0;
+    goldCount = 0;
+    lockPassword = "";
+    lockTries = 0;
+    lockSolved = false;
+    bossRounds = 0;
+    inBossBattle = false;
+    path.clear();
+    maze.clear();
+    B.clear();
+    PlayerSkills.clear();
+    particles.clear();
+}
+
+// 游戏主逻辑
+void playGame() {
+    // 重置游戏状态
+    resetGameState();
+
+    // 读取 JSON 迷宫文件
+    ifstream in("1_maze_15_15.json");
+    json j;
+    in >> j;
+
+    auto raw_maze = j["maze"];
+    for (const auto& row : raw_maze) {
+        vector<char> mrow;
+        for (const auto& c : row) {
+            char ch = c.get<string>()[0];
+            mrow.push_back(ch);
+        }
+        maze.push_back(mrow);
+    }
+
+    // 读取BOSS血量数组和玩家技能数组
+    for (const auto& hp : j["B"]) {
+        B.push_back(hp.get<int>());
+    }
+    for (const auto& skill : j["PlayerSkills"]) {
+        vector<int> s;
+        for (const auto& num : skill) {
+            s.push_back(num.get<int>());
+        }
+        PlayerSkills.push_back(s);
+    }
+
+    // 读取线索和密码哈希
+    vector<vector<int>> clues;
+    for (const auto& c : j["C"]) {
+        vector<int> clue;
+        for (const auto& num : c) {
+            clue.push_back(num.get<int>());
+        }
+        clues.push_back(clue);
+    }
+    string lockHash = j["L"].get<string>();
+
+    // 查找起点和终点
+    for (int i = 0; i < maze.size(); ++i)
+        for (int j = 0; j < maze[0].size(); ++j) {
+            if (maze[i][j] == 'S') start_pos = { i, j };
+            if (maze[i][j] == 'E') end_pos = { i, j };
+        }
+
+    // 开始迷宫探索
+    vector<vector<bool>> visited(maze.size(), vector<bool>(maze[0].size(), false));
+    BeginBatchDraw();
+    dfs(start_pos, visited, clues, lockHash);
+    EndBatchDraw();
+
+    // 游戏结束，进入结束界面
+    currentState = END_SCREEN;
+}
+
+int main() {
+    // 设置默认窗口大小
+    screenWidth = 1300;  // 15*60+400=1300
+    screenHeight = 900;  // 15*60=900
+
+    // 初始化图形窗口
+    initgraph(screenWidth, screenHeight);
+    setbkcolor(WHITE);
+    cleardevice();
+    srand(static_cast<unsigned int>(time(nullptr))); // 初始化随机数生成器
+
+    // 初始化粒子系统
+    for (int i = 0; i < 100; i++) {
+        addParticles(rand() % screenWidth, rand() % screenHeight, 1,
+            RGB(rand() % 256, rand() % 256, rand() % 256),
+            100, 2);
+    }
+
+    // 主游戏循环
+    while (gameRunning) {
+        switch (currentState) {
+        case START_SCREEN:
+            showStartScreen();
+            break;
+
+        case MAZE_SCREEN:
+            playGame();
+            break;
+
+        case END_SCREEN:
+            showEndScreen();
+            break;
+        }
+    }
+
+    // 关闭图形窗口
+    closegraph();
+    return 0;
+}

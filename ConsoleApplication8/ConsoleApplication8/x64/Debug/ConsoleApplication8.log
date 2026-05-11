@@ -1,0 +1,25 @@
+﻿  ConsoleApplication8.cpp
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(420,20): warning C4838: 从“char”转换到“TCHAR”需要收缩转换
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(429,16): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(434,48): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(438,54): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(569,27): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(570,30): warning C4002: 类函数宏的调用“RGB”参数过多
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(580,30): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(581,30): warning C4002: 类函数宏的调用“RGB”参数过多
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(601,31): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(602,30): warning C4002: 类函数宏的调用“RGB”参数过多
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(618,30): warning C4002: 类函数宏的调用“RGB”参数过多
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(625,30): warning C4002: 类函数宏的调用“RGB”参数过多
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(669,11): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(670,11): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(845,11): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(846,11): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(995,22): warning C4002: 类函数宏的调用“RGB”参数过多
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(1095,22): warning C4002: 类函数宏的调用“RGB”参数过多
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(1163,35): warning C4267: “=”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(1195,46): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(1198,49): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(1215,50): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+D:\suanfa\ConsoleApplication8\ConsoleApplication8\ConsoleApplication8.cpp(1221,50): warning C4267: “参数”: 从“size_t”转换到“int”，可能丢失数据
+  ConsoleApplication8.vcxproj -> D:\suanfa\ConsoleApplication8\x64\Debug\ConsoleApplication8.exe
